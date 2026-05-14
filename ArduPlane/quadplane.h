@@ -119,6 +119,9 @@ public:
     void update_throttle_hover();
     bool show_vtol_view() const;
 
+    // spin-wing VTOL: virtual (non-spinning) heading in radians for the GCS HUD
+    float get_virtual_heading_rad(void);
+
     // vtol help for is_flying()
     bool is_flying(void);
 
@@ -584,6 +587,9 @@ private:
     // time when we last ran the vertical accel controller
     uint32_t last_pidz_active_ms;
     uint32_t last_pidz_init_ms;
+
+    // spin-wing VTOL: last commanded virtual heading (rad), held when stationary
+    float last_virtual_heading_rad = 0.0f;
 
     // throttle scailing for vectored motors in FW flighy
     float FW_vector_throttle_scaling(void);

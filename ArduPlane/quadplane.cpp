@@ -1939,6 +1939,29 @@ void QuadPlane::output_wing_tilt(void)
 }
 
 /*
+  spin-wing VTOL: return a virtual (non-spinning) heading for the GCS HUD.
+
+  The airframe deliberately spins about its yaw axis in hover, so raw AHRS
+  yaw is not a useful HUD heading. Instead we report the direction of the
+  commanded horizontal velocity, holding the last commanded heading while
+  stationary. Raw body yaw is reported untouched in the gyro field of the
+  ATTITUDE message so spin rate stays visible.
+ */
+float QuadPlane::get_virtual_heading_rad(void)
+{
+    // prefer the commanded velocity direction in the world (NEU) frame
+    if (pos_control != nullptr) {
+        const Vector3f vel_target = pos_control->get_vel_target_cms();
+        if (vel_target.xy().length() > 50.0f) {  // > 0.5 m/s
+            last_virtual_heading_rad = atan2f(vel_target.y, vel_target.x);
+            return last_virtual_heading_rad;
+        }
+    }
+    // hold last commanded heading when stationary
+    return last_virtual_heading_rad;
+}
+
+/*
   see if motors should be shutdown. If they should be then change AP_Motors state to 
   AP_Motors::DesiredSpoolState::SHUT_DOWN
 

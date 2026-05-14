@@ -283,6 +283,8 @@ private:
 
     bool should_relax(void);
     void motors_output(bool run_rate_controller = true);
+    // spin-wing VTOL: drive the wing-tilt servo (k_wing_tilt_collective)
+    void output_wing_tilt(void);
     void Log_Write_QControl_Tuning();
     void log_QPOS(void);
     float landing_descent_rate_cms(float height_above_ground);

@@ -1881,6 +1881,9 @@ void QuadPlane::update(void)
 
     tiltrotor.update();
 
+    // spin-wing VTOL: drive the wing-tilt servo to match cruise/hover state
+    output_wing_tilt();
+
 #if HAL_LOGGING_ENABLED
     // motors logging
     if (motors->armed()) {
@@ -1905,6 +1908,34 @@ void QuadPlane::update(void)
 #else
     (void)now;
 #endif  // HAL_LOGGING_ENABLED
+}
+
+/*
+  output to the spin-wing VTOL wing-tilt servo (k_wing_tilt_collective).
+
+  Phase 1: binary tilt - the wing is driven to its hover position whenever
+  the aircraft is in a VTOL mode, and to its cruise position otherwise. The
+  phase 2 block below scales the servo with hover throttle so the wing acts
+  as an analog helicopter-style collective.
+ */
+void QuadPlane::output_wing_tilt(void)
+{
+    const uint16_t cruise_pwm = plane.g.wing_tilt_cruise_pwm;
+    const uint16_t hover_pwm  = plane.g.wing_tilt_hover_pwm;
+
+    if (!available() || !in_vtol_mode()) {
+        SRV_Channels::set_output_pwm(SRV_Channel::k_wing_tilt_collective, cruise_pwm);
+        return;
+    }
+
+    // Phase 1: binary tilt
+    SRV_Channels::set_output_pwm(SRV_Channel::k_wing_tilt_collective, hover_pwm);
+
+    /* PHASE 2 - analog collective scaled by throttle:
+    const float thr = constrain_float(motors->get_throttle(), 0.0f, 1.0f);
+    const uint16_t pwm = cruise_pwm + (uint16_t)(thr * (hover_pwm - cruise_pwm));
+    SRV_Channels::set_output_pwm(SRV_Channel::k_wing_tilt_collective, pwm);
+    */
 }
 
 /*

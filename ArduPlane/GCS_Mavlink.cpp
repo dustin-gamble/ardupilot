@@ -143,6 +143,13 @@ void GCS_MAVLINK_Plane::send_attitude() const
         p = plane.quadplane.ahrs_view->pitch;
         y = plane.quadplane.ahrs_view->yaw;
     }
+
+    // spin-wing VTOL: replace HUD yaw with a stable virtual heading while the
+    // airframe is deliberately spinning. The raw gyro Z sent below is left
+    // untouched so the GCS can still see the spin rate.
+    if (plane.quadplane.in_vtol_mode() && plane.g.virtual_heading_enable) {
+        y = plane.quadplane.get_virtual_heading_rad();
+    }
 #endif
 
     const Vector3f &omega = ahrs.get_gyro();
@@ -155,6 +162,16 @@ void GCS_MAVLINK_Plane::send_attitude() const
         omega.x,
         omega.y,
         omega.z);
+
+#if HAL_QUADPLANE_ENABLED
+    // spin-wing VTOL diagnostics: publish raw body yaw and spin rate so they
+    // stay observable even while the ATTITUDE yaw field carries the virtual
+    // heading. Emitted on this channel at the ATTITUDE stream rate.
+    if (plane.g.virtual_heading_enable) {
+        send_named_float("BYAW", degrees(ahrs.get_yaw()));
+        send_named_float("SPN_RPM", degrees(omega.z) / 6.0f);
+    }
+#endif
 }
 
 void GCS_MAVLINK_Plane::send_attitude_target() 

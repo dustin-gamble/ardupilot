@@ -1,0 +1,44 @@
+# spinwing.parm - Spin-Wing VTOL flying wing SITL configuration
+#
+# Twin-pusher tailsitter flying wing with a wing-tilt servo that acts as a
+# helicopter-style collective in hover, plus a non-spinning virtual-heading HUD.
+#
+# Load with:
+#   sim_vehicle.py -v ArduPlane -f flightaxis --add-param-file=spinwing.parm
+
+# EKF3: raised tolerances for a deliberately spinning airframe
+EK3_GYRO_P_NSE   0.05
+EK3_YAW_M_NSE    0.5
+EK3_GLITCH_RAD   25
+INS_GYRO_FILTER  80
+
+# QuadPlane tailsitter code path
+# Q_TAILSIT_ENABLE must be 1 - tailsitter.enabled() is (enable > 0) &&
+# setup_complete, so the tailsitter path is inactive without it.
+Q_ENABLE         1
+Q_TAILSIT_ENABLE 1
+Q_FRAME_CLASS    10
+Q_TAILSIT_MOTMX  5
+Q_TAILSIT_INPUT  0
+Q_TRANSITION_MS  5000
+Q_ASSIST_SPEED   8
+
+# Attitude rate limits (deg/s)
+ATC_RATE_R_MAX   360
+ATC_RATE_P_MAX   360
+ATC_RATE_Y_MAX   720
+
+# Servo assignments:
+#   SERVO1/2 = twin pusher motors (throttle left / throttle right)
+#   SERVO3/4 = elevons (left / right)
+#   SERVO5   = wing-tilt collective (k_wing_tilt_collective = 156)
+SERVO1_FUNCTION  33
+SERVO2_FUNCTION  34
+SERVO3_FUNCTION  77
+SERVO4_FUNCTION  78
+SERVO5_FUNCTION  156
+
+# Wing-tilt servo travel and virtual-heading HUD override
+WING_CRUISE_PWM  1000
+WING_HOVER_PWM   2000
+VHDG_ENABLE      1

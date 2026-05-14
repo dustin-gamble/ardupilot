@@ -357,6 +357,11 @@ public:
         k_param_acro_yaw_rate,
         k_param_takeoff_throttle_max_t,
         k_param_autotune_options,
+
+        // spin-wing VTOL parameters
+        k_param_wing_tilt_cruise_pwm,
+        k_param_wing_tilt_hover_pwm,
+        k_param_virtual_heading_enable,
     };
 
     AP_Int16 format_version;
@@ -467,6 +472,11 @@ public:
     AP_Int8 override_channel;
 #endif
     AP_Int16 gcs_pid_mask;
+
+    // Spin-wing VTOL: wing-tilt servo positions and virtual heading override
+    AP_Int16 wing_tilt_cruise_pwm;
+    AP_Int16 wing_tilt_hover_pwm;
+    AP_Int8  virtual_heading_enable;
 };
 
 /*

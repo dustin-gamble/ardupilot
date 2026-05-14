@@ -778,6 +778,31 @@ const AP_Param::Info Plane::var_info[] = {
     // @User: Standard
     GSCALAR(rangefinder_landing,    "RNGFND_LANDING",   0),
 
+    // @Param: WING_CRUISE_PWM
+    // @DisplayName: Wing-tilt servo PWM in cruise position
+    // @Description: PWM output for the spin-wing VTOL wing-tilt servo (a servo with SERVOn_FUNCTION = 156) when in fixed-wing cruise. Sets the wing to its low-incidence forward-flight position.
+    // @Range: 800 2200
+    // @Increment: 1
+    // @Units: PWM
+    // @User: Standard
+    GSCALAR(wing_tilt_cruise_pwm,   "WING_CRUISE_PWM",  1000),
+
+    // @Param: WING_HOVER_PWM
+    // @DisplayName: Wing-tilt servo PWM in hover position
+    // @Description: PWM output for the spin-wing VTOL wing-tilt servo (a servo with SERVOn_FUNCTION = 156) when in a VTOL/hover mode. Sets the wing to its high-incidence position, where it acts as a helicopter-style collective.
+    // @Range: 800 2200
+    // @Increment: 1
+    // @Units: PWM
+    // @User: Standard
+    GSCALAR(wing_tilt_hover_pwm,    "WING_HOVER_PWM",   2000),
+
+    // @Param: VHDG_ENABLE
+    // @DisplayName: Enable virtual heading override in ATTITUDE message
+    // @Description: When enabled, the yaw field of the ATTITUDE MAVLink message is replaced with a virtual (non-spinning) heading while in a VTOL mode, so the GCS HUD compass stays stable on a deliberately spinning airframe. Raw gyro Z is left untouched so spin rate remains visible.
+    // @Values: 0:Disabled,1:Enabled
+    // @User: Standard
+    GSCALAR(virtual_heading_enable, "VHDG_ENABLE",      1),
+
 #if AP_TERRAIN_AVAILABLE
     // @Group: TERRAIN_
     // @Path: ../libraries/AP_Terrain/AP_Terrain.cpp

@@ -169,7 +169,19 @@ void GCS_MAVLINK_Plane::send_attitude() const
     // heading. Emitted on this channel at the ATTITUDE stream rate.
     if (plane.g.virtual_heading_enable) {
         send_named_float("BYAW", degrees(ahrs.get_yaw()));
-        send_named_float("SPN_RPM", degrees(omega.z) / 6.0f);
+        // Spin rate in the airframe's actual spin axis. For a tailsitter the
+        // world vertical axis maps to body X (not body Z), so the raw omega.z
+        // here would report precession, not spin -- get_spin_rate_rps() picks
+        // the right axis via the rotated AHRS view.
+        send_named_float("SPN_RPM", degrees(plane.quadplane.get_spin_rate_rps()) / 6.0f);
+    }
+    // Phase 3: spin-cyclic mixer normalised output [-1, +1] (0 when inactive).
+    // SPN_PHS = current view-frame yaw in deg (the body azimuth used to phase
+    // the cyclic). If the body is actually spinning, SPN_PHS should be
+    // sweeping continuously from -180 to +180 every revolution.
+    if (plane.g.spin_enable) {
+        send_named_float("SPN_CYC", plane.quadplane.last_spin_cyclic_norm);
+        send_named_float("SPN_PHS", degrees(plane.quadplane.get_spin_phase_rad()));
     }
 #endif
 }

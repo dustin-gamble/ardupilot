@@ -122,6 +122,17 @@ public:
     // spin-wing VTOL: virtual (non-spinning) heading in radians for the GCS HUD
     float get_virtual_heading_rad(void);
 
+    // spin-wing VTOL: signed spin rate (rad/s) in the correct axis.
+    // For a tailsitter the AHRS view is rotated 90 deg pitch so the spin
+    // axis (world vertical) maps to ahrs_view->get_gyro().z (with sign
+    // flipped to give CCW-positive); for non-tailsitter falls back to body Z.
+    float get_spin_rate_rps(void) const;
+
+    // spin-wing VTOL: body azimuth (rad) about the spin axis -- the angle
+    // used to phase the cyclic mixer. For a tailsitter this is the view
+    // frame yaw (rotation about world vertical). Returns 0 if no view.
+    float get_spin_phase_rad(void) const;
+
     // vtol help for is_flying()
     bool is_flying(void);
 
@@ -288,6 +299,10 @@ private:
     void motors_output(bool run_rate_controller = true);
     // spin-wing VTOL: drive the wing-tilt servo (k_wing_tilt_collective)
     void output_wing_tilt(void);
+    // spin-wing VTOL: once-per-rev cyclic on elevons, gyro-precession-corrected
+    void output_spin_cyclic(void);
+    // spin-wing VTOL: heli-style direct manual motor drive from a 3-pos RC switch
+    void output_spin_manual_motors(void);
     void Log_Write_QControl_Tuning();
     void log_QPOS(void);
     float landing_descent_rate_cms(float height_above_ground);
@@ -590,6 +605,10 @@ private:
 
     // spin-wing VTOL: last commanded virtual heading (rad), held when stationary
     float last_virtual_heading_rad = 0.0f;
+
+    // spin-wing VTOL: most recent cyclic elevon output normalised to [-1, +1],
+    // for SPN_CYC telemetry. Zero when the mixer is bypassed.
+    float last_spin_cyclic_norm = 0.0f;
 
     // throttle scailing for vectored motors in FW flighy
     float FW_vector_throttle_scaling(void);

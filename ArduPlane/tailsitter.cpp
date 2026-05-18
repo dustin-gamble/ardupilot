@@ -494,6 +494,18 @@ void Tailsitter::output(void)
     SRV_Channels::set_output_scaled(SRV_Channel::k_vtail_right, elevator_mix - rudder_mix);
     SRV_Channels::set_output_scaled(SRV_Channel::k_vtail_left, elevator_mix + rudder_mix);
 
+    // spin-wing VTOL Phase 3: when spinning above SPIN_THRSHLD, override the
+    // body-frame elevon mix above with a world-frame cyclic that accounts for
+    // gyroscopic precession. Below threshold this is a no-op.
+    quadplane.output_spin_cyclic();
+
+    // spin-wing VTOL: heli-style manual motor drive (RC switch -> SERVO1/2).
+    // MUST run here (not from QuadPlane::update) because Plane::servos_output
+    // calls servos_twin_engine_mix() BEFORE Tailsitter::output(), and that
+    // mixer overwrites k_throttleLeft/Right with k_throttle (0 in VTOL).
+    // Running here ensures our PWM wins.
+    quadplane.output_spin_manual_motors();
+
     if (roll_lim) {
         motors->limit.roll = true;
     }

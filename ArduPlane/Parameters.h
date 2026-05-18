@@ -362,6 +362,19 @@ public:
         k_param_wing_tilt_cruise_pwm,
         k_param_wing_tilt_hover_pwm,
         k_param_virtual_heading_enable,
+        // spin-wing VTOL: Phase 3 spin-cyclic mixer
+        k_param_spin_enable,
+        k_param_spin_threshold_rps,
+        k_param_spin_phase_lead_deg,
+        k_param_spin_cyclic_gain,
+        // spin-wing VTOL: heli-style manual control (RC -> motors / collective)
+        k_param_spin_man_enable,
+        k_param_spin_mot_rc_ch,
+        k_param_spin_coll_rc_ch,
+        k_param_spin_thr_lo,
+        k_param_spin_thr_mid,
+        k_param_spin_thr_hi,
+        k_param_spin_coll_min,
     };
 
     AP_Int16 format_version;
@@ -477,6 +490,21 @@ public:
     AP_Int16 wing_tilt_cruise_pwm;
     AP_Int16 wing_tilt_hover_pwm;
     AP_Int8  virtual_heading_enable;
+
+    // Spin-wing VTOL: Phase 3 spin-cyclic mixer
+    AP_Int8  spin_enable;
+    AP_Float spin_threshold_rps;
+    AP_Float spin_phase_lead_deg;
+    AP_Float spin_cyclic_gain;
+
+    // Spin-wing VTOL: heli-style manual control (bypasses QuadPlane motor mixer)
+    AP_Int8  spin_man_enable;
+    AP_Int8  spin_mot_rc_ch;
+    AP_Int8  spin_coll_rc_ch;
+    AP_Int16 spin_thr_lo;
+    AP_Int16 spin_thr_mid;
+    AP_Int16 spin_thr_hi;
+    AP_Int16 spin_coll_min;
 };
 
 /*

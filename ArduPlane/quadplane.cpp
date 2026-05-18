@@ -3,6 +3,7 @@
 #if HAL_QUADPLANE_ENABLED
 
 #include "AC_AttitudeControl/AC_AttitudeControl_TS.h"
+#include <AP_ESC_Telem/AP_ESC_Telem.h>
 
 const AP_Param::GroupInfo QuadPlane::var_info[] = {
 
@@ -1881,8 +1882,20 @@ void QuadPlane::update(void)
 
     tiltrotor.update();
 
-    // spin-wing VTOL: drive the wing-tilt servo to match cruise/hover state
+    // spin-wing VTOL: drive the wing-tilt servo (collective). The wingtip
+    // motor PWM override (output_spin_manual_motors) is hooked from
+    // Tailsitter::output() in servos.cpp -- it must run AFTER
+    // Plane::servos_twin_engine_mix() or the twin-engine mixer overwrites
+    // our k_throttleLeft/Right writes with the VTOL-zero forward throttle.
     output_wing_tilt();
+
+    // Publish the body spin rate to the ESC telemetry pipeline as ESC3 RPM
+    // so it shows up in Mission Planner's HUD/Status as a live gauge.
+    // (ESC indices are 0-based: ESC3 = index 2.) RPM = |rad/s| * 60 / (2*pi).
+#if HAL_WITH_ESC_TELEM
+    const float spin_rpm = fabsf(get_spin_rate_rps()) * 9.5493f;
+    AP::esc_telem().update_rpm(2, spin_rpm, 0);
+#endif
 
 #if HAL_LOGGING_ENABLED
     // motors logging
@@ -1913,29 +1926,218 @@ void QuadPlane::update(void)
 /*
   output to the spin-wing VTOL wing-tilt servo (k_wing_tilt_collective).
 
-  Phase 1: binary tilt - the wing is driven to its hover position whenever
-  the aircraft is in a VTOL mode, and to its cruise position otherwise. The
-  phase 2 block below scales the servo with hover throttle so the wing acts
-  as an analog helicopter-style collective.
+  Two modes:
+    SPIN_MAN_ENBL = 1 : helicopter-style. The wing incidence tracks an analog
+                       RC stick on channel SPIN_COL_RCCH (default RC3) so the
+                       pilot directly commands collective. Motor RPM is set
+                       separately by output_spin_manual_motors().
+    SPIN_MAN_ENBL = 0 : automatic collective. The wing incidence is scaled by
+                       the VTOL throttle output from the attitude controller
+                       (Phase 2 analog collective).
+
+  Outside VTOL modes the wing is always driven to the cruise PWM.
  */
 void QuadPlane::output_wing_tilt(void)
 {
     const uint16_t cruise_pwm = plane.g.wing_tilt_cruise_pwm;
     const uint16_t hover_pwm  = plane.g.wing_tilt_hover_pwm;
 
-    if (!available() || !in_vtol_mode()) {
+    // Outside VTOL: wing parked at cruise.
+    if (!in_vtol_mode()) {
         SRV_Channels::set_output_pwm(SRV_Channel::k_wing_tilt_collective, cruise_pwm);
         return;
     }
 
-    // Phase 1: binary tilt
-    SRV_Channels::set_output_pwm(SRV_Channel::k_wing_tilt_collective, hover_pwm);
+    // Source of the collective normalised [0, 1]:
+    //   - QSTABILIZE / QACRO (manual): the pilot's analog stick on
+    //     SPIN_COL_RCCH (default RC3) -- direct heli-style collective.
+    //   - QHOVER / QLOITER / QLAND / QRTL / QAUTO (autopilot): whatever
+    //     the attitude/position controller currently wants for throttle,
+    //     read from motors->get_throttle() (0..1). This lets the autopilot
+    //     command altitude via the wing's incidence angle, which is the
+    //     only vertical-force actuator we have once spin rate is fixed
+    //     by the pilot's RC switch.
+    float collective_n = 0.0f;
+    const bool manual_collective = (plane.g.spin_man_enable && plane.control_mode != nullptr &&
+        (plane.control_mode->mode_number() == Mode::Number::QSTABILIZE ||
+         plane.control_mode->mode_number() == Mode::Number::QACRO));
 
-    /* PHASE 2 - analog collective scaled by throttle:
-    const float thr = constrain_float(motors->get_throttle(), 0.0f, 1.0f);
-    const uint16_t pwm = cruise_pwm + (uint16_t)(thr * (hover_pwm - cruise_pwm));
+    // Compute the collective PWM. The mapping range differs by source:
+    //  - Manual stick: full [cruise_pwm, hover_pwm] travel so the pilot can
+    //    intentionally collapse lift to cruise. This matches helicopter
+    //    collective behaviour where stick-down = no lift = descent.
+    //  - Autopilot: clamped lower bound at SPIN_COLL_MIN so the controller
+    //    can't kill lift by chasing altitude errors -- it stays in a tight
+    //    band near hover and modulates within that.
+    uint16_t pwm;
+    if (manual_collective) {
+        RC_Channel *col = rc().channel(plane.g.spin_coll_rc_ch - 1);
+        if (col == nullptr) {
+            SRV_Channels::set_output_pwm(SRV_Channel::k_wing_tilt_collective, cruise_pwm);
+            return;
+        }
+        const uint16_t pwm_in = col->get_radio_in();
+        collective_n = constrain_float(((float)pwm_in - 1000.0f) / 1000.0f, 0.0f, 1.0f);
+        const int32_t span = (int32_t)hover_pwm - (int32_t)cruise_pwm;
+        pwm = (uint16_t)constrain_int32(
+            (int32_t)cruise_pwm + (int32_t)lroundf(collective_n * (float)span),
+            800, 2200);
+    } else {
+        if (!available()) {
+            SRV_Channels::set_output_pwm(SRV_Channel::k_wing_tilt_collective, cruise_pwm);
+            return;
+        }
+        collective_n = constrain_float(motors->get_throttle(), 0.0f, 1.0f);
+        const uint16_t coll_min = (uint16_t)plane.g.spin_coll_min;
+        const int32_t span = (int32_t)hover_pwm - (int32_t)coll_min;
+        pwm = (uint16_t)constrain_int32(
+            (int32_t)coll_min + (int32_t)lroundf(collective_n * (float)span),
+            800, 2200);
+    }
+
     SRV_Channels::set_output_pwm(SRV_Channel::k_wing_tilt_collective, pwm);
-    */
+}
+
+/*
+  spin-wing VTOL: heli-style direct motor drive from a 3-position RC switch.
+
+  When SPIN_MAN_ENBL=1, both wingtip motor channels (k_throttleLeft/Right)
+  are written from one of three PWM presets (SPIN_THR_LO/MID/HI) selected
+  by the position of SPIN_MOT_RCCH (default RC10). This bypasses the
+  QuadPlane motor mixer entirely -- spin rate is pilot-set, not controlled.
+
+  Motors are forced to SPIN_THR_LO (default 0) when the vehicle is disarmed
+  or outside a VTOL mode. Called every loop from QuadPlane::update().
+ */
+void QuadPlane::output_spin_manual_motors(void)
+{
+    if (!plane.g.spin_man_enable) {
+        return;
+    }
+    // Active in ALL VTOL modes so the pilot's 3-pos switch always owns motor
+    // RPM (and therefore spin rate). The autopilot owns wing-tilt collective
+    // and elevon cyclic in QHOVER / QLOITER for altitude + position hold.
+    if (!in_vtol_mode()) {
+        return;
+    }
+
+    uint16_t pwm = (uint16_t)plane.g.spin_thr_lo;
+    if (plane.arming.is_armed_and_safety_off()) {
+        RC_Channel *sw = rc().channel(plane.g.spin_mot_rc_ch - 1);
+        if (sw != nullptr) {
+            const uint16_t in = sw->get_radio_in();
+            if      (in >= 1700) pwm = (uint16_t)plane.g.spin_thr_hi;
+            else if (in >= 1300) pwm = (uint16_t)plane.g.spin_thr_mid;
+            else                 pwm = (uint16_t)plane.g.spin_thr_lo;
+        }
+    }
+
+    SRV_Channels::set_output_pwm(SRV_Channel::k_throttleLeft,  pwm);
+    SRV_Channels::set_output_pwm(SRV_Channel::k_throttleRight, pwm);
+}
+
+/*
+  spin-wing VTOL Phase 3: once-per-revolution cyclic on the elevons,
+  gyro-precession-corrected. Overrides the standard tailsitter elevon
+  mixer when the airframe is spinning faster than SPIN_THRSHLD.
+
+  Theory: the standard tailsitter attitude controller commands body-frame
+  pitch / roll, but on a deliberately spinning body those commands rotate
+  with the airframe and never produce a steady world-frame tilt. Instead
+  we project a desired world-frame horizontal acceleration (from the
+  position controller) into the spinning body's reference frame using the
+  current yaw angle plus a tuneable phase lead that accounts for the
+  gyroscopic precession lag between elevon input and body response.
+
+  Output: both elevons deflect together as a sinusoid keyed to body
+  azimuth -- positive cyclic = body-frame pitch up = world-frame tilt in
+  the direction of the desired acceleration vector.
+ */
+void QuadPlane::output_spin_cyclic(void)
+{
+    last_spin_cyclic_norm = 0.0f;
+
+    if (!plane.g.spin_enable) {
+        return;
+    }
+    if (!available() || !in_vtol_mode()) {
+        return;
+    }
+    if (ahrs_view == nullptr) {
+        return;
+    }
+
+    // Body yaw rate magnitude -- below threshold, leave standard mixer alone.
+    // For a tailsitter the actual spin axis is view.z (= -body.x via 90-deg
+    // pitch rotation of the AHRS view), so this reads the right axis.
+    const float spin_rate_rps = ahrs_view->get_gyro().z;
+    if (fabsf(spin_rate_rps) < plane.g.spin_threshold_rps) {
+        return;
+    }
+
+    // Resolve world-frame horizontal tilt demand from one of two sources:
+    //   - QSTABILIZE / QACRO: RC stick directly, interpreted in the
+    //     virtual-heading-local frame (pitch fwd = move toward current HUD
+    //     heading; roll right = move 90 deg right of it).
+    //   - other VTOL modes (QHOVER / QLOITER / QLAND / AUTO): the position
+    //     controller's NEU acceleration target, which already incorporates
+    //     the pilot's stick demand via the standard velocity controller.
+    float tilt_dir = 0.0f;
+    float tilt_mag = 0.0f;
+    const bool manual_mode = (plane.control_mode != nullptr &&
+        (plane.control_mode->mode_number() == Mode::Number::QSTABILIZE ||
+         plane.control_mode->mode_number() == Mode::Number::QACRO));
+
+    if (manual_mode) {
+        const float pitch_in = -plane.channel_pitch->norm_input_dz();  // fwd stick = +
+        const float roll_in  =  plane.channel_roll->norm_input_dz();   // right stick = +
+        const float stick_mag = sqrtf(pitch_in * pitch_in + roll_in * roll_in);
+        if (stick_mag < 0.05f) {
+            SRV_Channels::set_output_scaled(SRV_Channel::k_elevon_left,  0.0f);
+            SRV_Channels::set_output_scaled(SRV_Channel::k_elevon_right, 0.0f);
+            return;
+        }
+        const float vhdg = last_virtual_heading_rad;
+        const float world_x = pitch_in * cosf(vhdg) - roll_in * sinf(vhdg);
+        const float world_y = pitch_in * sinf(vhdg) + roll_in * cosf(vhdg);
+        tilt_dir = atan2f(world_y, world_x);
+        tilt_mag = stick_mag * 200.0f;  // scale stick -> acc-like units (cm/s/s-ish)
+    } else if (pos_control != nullptr) {
+        const Vector3f accel_target = pos_control->get_accel_target_cmss();
+        const Vector2f accel_NE(accel_target.x, accel_target.y);
+        tilt_mag = accel_NE.length();
+        if (tilt_mag < 1.0f) {
+            SRV_Channels::set_output_scaled(SRV_Channel::k_elevon_left,  0.0f);
+            SRV_Channels::set_output_scaled(SRV_Channel::k_elevon_right, 0.0f);
+            return;
+        }
+        tilt_dir = atan2f(accel_NE.y, accel_NE.x);
+    } else {
+        return;
+    }
+
+    // For a tailsitter the rotation about the spin axis (world vertical)
+    // shows up as yaw in the rotated AHRS view (view-Z = world DOWN), NOT
+    // as yaw in the raw body frame (body-Z = horizontal = wobble axis).
+    // Using ahrs.get_yaw() here was the bug: it didn't change as the body
+    // spun about its actual spin axis, so cos(phase) didn't oscillate and
+    // the cyclic was a constant instead of a once-per-rev sine wave.
+    const float body_yaw = ahrs_view->yaw;
+    const float phase_lead = radians(plane.g.spin_phase_lead_deg);
+
+    // Cyclic phase: peak deflection when body azimuth + phase_lead aligns with tilt dir.
+    const float phase = body_yaw + phase_lead - tilt_dir;
+    const float cyclic_norm = cosf(phase);
+    last_spin_cyclic_norm = cyclic_norm;
+
+    const float cyclic_servo = constrain_float(
+        plane.g.spin_cyclic_gain * tilt_mag * cyclic_norm,
+        -SERVO_MAX, SERVO_MAX);
+
+    // Overwrite standard tailsitter mix on both elevons (collective elevator).
+    // Differential (aileron) channel is left untouched - reserved for spin-rate trim.
+    SRV_Channels::set_output_scaled(SRV_Channel::k_elevon_left,  cyclic_servo);
+    SRV_Channels::set_output_scaled(SRV_Channel::k_elevon_right, cyclic_servo);
 }
 
 /*
@@ -1959,6 +2161,28 @@ float QuadPlane::get_virtual_heading_rad(void)
     }
     // hold last commanded heading when stationary
     return last_virtual_heading_rad;
+}
+
+/*
+  spin-wing VTOL: return the signed spin rate in rad/s about the airframe's
+  intended spin axis. For a tailsitter the AHRS view is rotated 90 deg
+  pitch (see QuadPlane::setup) so world vertical maps to view.z with sign
+  flipped. For non-tailsitter frames we fall back to body Z (raw yaw rate).
+ */
+float QuadPlane::get_spin_rate_rps(void) const
+{
+    if (ahrs_view != nullptr && tailsitter.enabled()) {
+        return -ahrs_view->get_gyro().z;
+    }
+    return AP::ahrs().get_gyro().z;
+}
+
+float QuadPlane::get_spin_phase_rad(void) const
+{
+    if (ahrs_view != nullptr) {
+        return ahrs_view->yaw;
+    }
+    return 0.0f;
 }
 
 /*

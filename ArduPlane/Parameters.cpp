@@ -803,6 +803,92 @@ const AP_Param::Info Plane::var_info[] = {
     // @User: Standard
     GSCALAR(virtual_heading_enable, "VHDG_ENABLE",      1),
 
+    // @Param: SPIN_ENABLE
+    // @DisplayName: Spin-wing cyclic mixer enable
+    // @Description: When enabled and the airframe is spinning above SPIN_THRSHLD, the elevons (k_elevon_left/right) are driven by a once-per-revolution cyclic command synthesised from the position controller's horizontal acceleration target. Below threshold the standard tailsitter mixer runs. Only active in VTOL modes.
+    // @Values: 0:Disabled,1:Enabled
+    // @User: Standard
+    GSCALAR(spin_enable,            "SPIN_ENABLE",      1),
+
+    // @Param: SPIN_THRSHLD
+    // @DisplayName: Spin-cyclic activation threshold
+    // @Description: Magnitude of body yaw rate above which the spin-cyclic mixer takes over the elevons. Below this the standard tailsitter mixer runs unmodified.
+    // @Units: rad/s
+    // @Range: 0.1 10.0
+    // @Increment: 0.1
+    // @User: Standard
+    GSCALAR(spin_threshold_rps,     "SPIN_THRSHLD",     0.5f),
+
+    // @Param: SPIN_PH_LEAD
+    // @DisplayName: Spin-cyclic gyroscopic phase lead
+    // @Description: Azimuth advance applied to the cyclic command to compensate for gyroscopic precession. The body's tilt response lags the elevon input by ~90 deg of rotation, so the cyclic must be applied early. Sign depends on spin direction (positive for CW from above, negative for CCW). Tune empirically.
+    // @Units: deg
+    // @Range: -180 180
+    // @Increment: 1
+    // @User: Standard
+    GSCALAR(spin_phase_lead_deg,    "SPIN_PH_LEAD",     90.0f),
+
+    // @Param: SPIN_CYC_GAIN
+    // @DisplayName: Spin-cyclic magnitude gain
+    // @Description: Scalar from world-frame acceleration command (cm/s/s) to elevon cyclic amplitude. Higher = more tilt authority per unit commanded acceleration. Output is clamped to the elevon servo range.
+    // @Range: 0.0 100.0
+    // @Increment: 0.1
+    // @User: Standard
+    GSCALAR(spin_cyclic_gain,       "SPIN_CYC_GAIN",    10.0f),
+
+    // @Param: SPIN_MAN_ENBL
+    // @DisplayName: Spin-wing heli-style manual control enable
+    // @Description: When enabled, the two wingtip motor channels (k_throttleLeft/Right) are driven directly from a 3-position RC switch (SPIN_MOT_RC_CH), and the wing-tilt servo (k_wing_tilt_collective) is driven directly from an analog RC stick (SPIN_COLL_RC_CH) as a helicopter-style collective. Bypasses the QuadPlane motor mixer entirely -- spin rate is set by the switch, vertical lift by the stick. Required to be in a VTOL mode.
+    // @Values: 0:Disabled,1:Enabled
+    // @User: Standard
+    GSCALAR(spin_man_enable,        "SPIN_MAN_ENBL",    0),
+
+    // @Param: SPIN_MOT_RCCH
+    // @DisplayName: RC channel for motor 3-position throttle
+    // @Description: 1-based RC channel index whose 3-position switch selects motor PWM among SPIN_THR_LO/MID/HI. Both wingtip motors get the same PWM.
+    // @Range: 1 16
+    // @User: Standard
+    GSCALAR(spin_mot_rc_ch,         "SPIN_MOT_RCCH",    10),
+
+    // @Param: SPIN_COL_RCCH
+    // @DisplayName: RC channel for analog collective (wing tilt)
+    // @Description: 1-based RC channel index whose analog input scales the wing-tilt servo PWM between WING_CRUISE_PWM (low stick) and WING_HOVER_PWM (high stick).
+    // @Range: 1 16
+    // @User: Standard
+    GSCALAR(spin_coll_rc_ch,        "SPIN_COL_RCCH",    3),
+
+    // @Param: SPIN_THR_LO
+    // @DisplayName: Manual motor PWM for switch position LOW
+    // @Description: Output PWM on both motors when SPIN_MOT_RCCH is in its lowest position. Set to 0 to fully kill motors in low position.
+    // @Range: 0 2200
+    // @Units: PWM
+    // @User: Standard
+    GSCALAR(spin_thr_lo,            "SPIN_THR_LO",      0),
+
+    // @Param: SPIN_THR_MID
+    // @DisplayName: Manual motor PWM for switch position MID
+    // @Description: Output PWM on both motors when SPIN_MOT_RCCH is in its middle position. Typically an idle / spin-up RPM.
+    // @Range: 0 2200
+    // @Units: PWM
+    // @User: Standard
+    GSCALAR(spin_thr_mid,           "SPIN_THR_MID",     1500),
+
+    // @Param: SPIN_THR_HI
+    // @DisplayName: Manual motor PWM for switch position HIGH
+    // @Description: Output PWM on both motors when SPIN_MOT_RCCH is in its highest position. Typically the design spin RPM for flight.
+    // @Range: 0 2200
+    // @Units: PWM
+    // @User: Standard
+    GSCALAR(spin_thr_hi,            "SPIN_THR_HI",      1800),
+
+    // @Param: SPIN_COLL_MIN
+    // @DisplayName: Autopilot collective lower bound (PWM)
+    // @Description: In autopilot VTOL modes (QHOVER / QLOITER / QLAND / QRTL / QAUTO) the wing-tilt servo PWM is mapped linearly from the autopilot throttle [0..1] into [SPIN_COLL_MIN, WING_HOVER_PWM]. Without this clamp the autopilot would swing the wing all the way down to WING_CRUISE_PWM (zero-AoA / no lift) trying to descend, which collapses lift entirely. Set this to the lowest PWM that still keeps the wing producing useful lift in your design (typical: WING_HOVER_PWM - 200 to -400). Ignored in manual modes (QSTABILIZE / QACRO) where the pilot stick drives the full WING_CRUISE_PWM..WING_HOVER_PWM range directly.
+    // @Range: 800 2200
+    // @Units: PWM
+    // @User: Standard
+    GSCALAR(spin_coll_min,          "SPIN_COLL_MIN",    1700),
+
 #if AP_TERRAIN_AVAILABLE
     // @Group: TERRAIN_
     // @Path: ../libraries/AP_Terrain/AP_Terrain.cpp

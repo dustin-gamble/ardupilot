@@ -6,19 +6,44 @@
 # Load with:
 #   sim_vehicle.py -v ArduPlane -f flightaxis --add-param-file=spinwing.parm
 
-# EKF3: raised tolerances for a deliberately spinning airframe
-EK3_GYRO_P_NSE   0.05
-EK3_YAW_M_NSE    0.5
-EK3_GLITCH_RAD   25
-INS_GYRO_FILTER  80
+# EKF3: tolerances for a deliberately fast-spinning airframe.
+# - GYRO_P_NSE raised: gives EKF more tolerance for noisy gyro at >100 RPM
+# - GBIAS_P_NSE raised: bias estimator can chase fast-changing bias
+# - YAW_M_NSE raised:  spinning compass measurements don't dominate
+# - ACC_P_NSE raised:  trust accels less for tilt -- centripetal contamination
+#                      is small in SITL (IMU at CG) but body precession means
+#                      the apparent gravity vector wobbles. Higher noise = EKF
+#                      relies more on gyro integration + GPS, less on accel.
+# - ABIAS_P_NSE raised: accel bias estimator adapts faster
+# - GYRO_FILTER raised: don't filter out the actual spin frequency
+# - GLITCH_RAD raised:  position glitch detector tolerates spin-induced jumps
+EK3_GYRO_P_NSE   0.30
+EK3_GBIAS_P_NSE  0.001
+EK3_YAW_M_NSE    1.0
+EK3_ACC_P_NSE    1.0
+EK3_ABIAS_P_NSE  0.005
+EK3_GLITCH_RAD   40
+INS_GYRO_FILTER  160
+
+# Force single-IMU use to prevent EKF3 lane switching during fast spin.
+# Lane switches cause attitude discontinuities -- with one IMU, no switching.
+# Both IMUs in SITL are identical anyway, so no downside.
+EK3_IMU_MASK     1
+INS_USE2         0
+INS_USE3         0
 
 # QuadPlane tailsitter code path
 # Q_TAILSIT_ENABLE must be 1 - tailsitter.enabled() is (enable > 0) &&
 # setup_complete, so the tailsitter path is inactive without it.
+#
+# Q_FRAME_CLASS = 10 selects AP_MotorsTailsitter (native 2-motor + elevons
+# mixer). Q_TAILSIT_MOTMX MUST be 0 with this frame class -- non-zero MOTMX
+# tells the code "this is a Copter tailsitter, use AP_MotorsMatrix instead"
+# which is incompatible with FRAME_CLASS 10 and produces zero motor output.
 Q_ENABLE         1
 Q_TAILSIT_ENABLE 1
 Q_FRAME_CLASS    10
-Q_TAILSIT_MOTMX  5
+Q_TAILSIT_MOTMX  0
 Q_TAILSIT_INPUT  0
 Q_TRANSITION_MS  5000
 Q_ASSIST_SPEED   8
@@ -32,8 +57,14 @@ ATC_RATE_Y_MAX   720
 #   SERVO1/2 = twin pusher motors (throttle left / throttle right)
 #   SERVO3/4 = elevons (left / right)
 #   SERVO5   = wing-tilt collective (k_wing_tilt_collective = 156)
-SERVO1_FUNCTION  33
-SERVO2_FUNCTION  34
+#
+# IMPORTANT: AP_MotorsTailsitter writes motor PWM to k_throttleLeft/Right
+# (functions 73/74), NOT to k_motor1/2 (33/34). 33/34 are multicopter-motor
+# functions that only AP_MotorsMatrix writes to. Setting SERVO1/2 to 33/34
+# while running AP_MotorsTailsitter (Q_FRAME_CLASS=10) gives zero motor
+# output regardless of throttle.
+SERVO1_FUNCTION  73
+SERVO2_FUNCTION  74
 SERVO3_FUNCTION  77
 SERVO4_FUNCTION  78
 SERVO5_FUNCTION  156
